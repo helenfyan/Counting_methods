@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+Figures/
+From_Crisp
+Manuscript_files
+Model_outputs
+
