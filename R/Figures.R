@@ -690,39 +690,210 @@ ss_plot <-
 
 ggsave('../Figures/SizeSpectra_plot.pdf', ss_plot, height = 7, width = 10)
 
+# Supplemental figures -----------------------------------------------------------------------------------
+### Precision ------------------------------------------------------------------
+# Measure the precision of different sampling techniques. Let's try extracting the standard deviation
+# between measures of abundance, biomass, and richness when scaled from 1 sample all the way up to multiple
 
+# What we want to do is randomly draw a block from the data, calculate the SD between transects, and then
+# repeat by increasing to more and more transects
 
+precision_plots <- list() # final plots
+bootend <- 100
 
+for (i in 1:2) {
+  if (i == 1) {
+    island <- 'Fantome_Island'
+    plot_shape <- 21
+    island_plot_label <- expression(bold('a') ~ 'Fantome Island')
+    max_x <- 48
+  } else {
+    island <- 'Orpheus_Island'
+    plot_shape <- 23
+    island_plot_label <- expression(bold('b') ~ 'Orpheus Island')
+    max_x <- 46
+  }
+  
+  # Filter the data
+  dat <- 
+    survey_clean %>% 
+    dplyr::filter(Location == island)
+  
+  # Bootstrap the entire process
+  boot_dfs <- list()
+  
+  for (j in 1:bootend) {
+    sample_df <- list()
+    
+    for (k in 2:length(unique(dat$block_ID))) {
+      # specify the blocks
+      block <- sample(dat$block_ID, k)
+      
+      # filter the dataset to contain the blocks and calculate SE
+      sample_df[[k]] <- 
+        dat %>% 
+        dplyr::filter(block_ID %in% block) %>% 
+        group_by(Distance_time) %>% 
+        summarise(n = n(),
+                  sd_biomass = sd(Biomass),
+                  se_biomass = sd_biomass/sqrt(n),
+                  sd_abun = sd(Abundance),
+                  se_abun = sd_abun/sqrt(n),
+                  sd_rich = sd(Richness),
+                  se_rich = sd_rich/sqrt(n)) %>% 
+        ungroup() %>% 
+        mutate(n_samples = paste(k))
+      
+    }
+    
+    boot_dfs[[j]] <- 
+      do.call(rbind, sample_df) %>% 
+      mutate(n_samples = as.numeric(n_samples),
+             iter = paste('boot', j, sep = '_'))
+    
+  }
+  
+  # Now we'll make the plots
+  island_precision_plots <- list()
+  
+  for (m in 1:3) {
+    
+    if (m == 1) {
+      # Biomass
+      plot_df <- 
+        do.call(rbind, boot_dfs) %>% 
+        group_by(Distance_time, n_samples) %>% 
+        summarise(med_val = median(se_biomass, na.rm = TRUE),
+                  se = sd(se_biomass/sqrt(n), na.rm = TRUE),
+                  lower = quantile(se_biomass, 0.25, na.rm = TRUE),
+                  upper = quantile(se_biomass, 0.75, na.rm = TRUE)) %>% 
+        ungroup() %>% 
+        # calculate plateau
+        left_join(do.call(rbind, boot_dfs) %>% 
+                    dplyr::filter(n_samples >= 40) %>% 
+                    group_by(Distance_time) %>% 
+                    summarise(plateau = median(se_biomass)) %>% 
+                    ungroup() %>% 
+                    mutate(lower_plat = plateau - (0.1*plateau),
+                           upper_plat = plateau + (0.1*plateau)), 
+                  by = c('Distance_time')) 
+      y_lab <- 'Biomass precision'
+      plot_title <- island_plot_label
+    } else if (m == 2) {
+      # Abundance
+      plot_df <- 
+        do.call(rbind, boot_dfs) %>% 
+        group_by(Distance_time, n_samples) %>% 
+        summarise(med_val = median(se_abun, na.rm = TRUE),
+                  se = sd(se_abun/sqrt(n), na.rm = TRUE),
+                  lower = quantile(se_abun, 0.25, na.rm = TRUE),
+                  upper = quantile(se_abun, 0.75, na.rm = TRUE)) %>% 
+        ungroup() %>% 
+        # calculate plateau
+        left_join(do.call(rbind, boot_dfs) %>% 
+                    dplyr::filter(n_samples >= 40) %>% 
+                    group_by(Distance_time) %>% 
+                    summarise(plateau = median(se_abun)) %>% 
+                    ungroup() %>% 
+                    mutate(lower_plat = plateau - (0.1*plateau),
+                           upper_plat = plateau + (0.1*plateau)), 
+                  by = c('Distance_time')) 
+      y_lab <- 'Abundance precision'
+      plot_title <- NULL
+    } else {
+      # Richness
+      plot_df <- 
+        do.call(rbind, boot_dfs) %>% 
+        group_by(Distance_time, n_samples) %>% 
+        summarise(med_val = median(se_rich, na.rm = TRUE),
+                  se = sd(se_rich/sqrt(n), na.rm = TRUE),
+                  lower = quantile(se_rich, 0.25, na.rm = TRUE),
+                  upper = quantile(se_rich, 0.75, na.rm = TRUE)) %>% 
+        ungroup() %>% 
+        # calculate plateau
+        left_join(do.call(rbind, boot_dfs) %>% 
+                    dplyr::filter(n_samples >= 40) %>% 
+                    group_by(Distance_time) %>% 
+                    summarise(plateau = median(se_rich)) %>% 
+                    ungroup() %>% 
+                    mutate(lower_plat = plateau - (0.1*plateau),
+                           upper_plat = plateau + (0.1*plateau)), 
+                  by = c('Distance_time')) 
+      y_lab <- 'Richness precision'
+      plot_title <- NULL
+    }
+    
+    island_precision_plots[[m]] <- 
+      plot_df %>% 
+      # create a dichotomy
+      mutate(plat = case_when(med_val >= lower_plat & med_val <= upper_plat ~ 'yes',
+                              TRUE ~ 'no'),
+             # reorder levels
+             Distance_time = factor(Distance_time, levels = c('Instant',
+                                                              '10min',
+                                                              '20m',
+                                                              '30m',
+                                                              '50m'))) %>% 
+      # generate the plot
+      ggplot(aes(x = n_samples, y = med_val, fill = Distance_time)) +
+      # illustrate the plateau region
+      geom_ribbon(aes(ymin = lower_plat, ymax = upper_plat), alpha = 0.2, fill = 'black') +
+      geom_segment(aes(y = lower, yend = upper, xend = n_samples), lineend = 'round',
+                   colour = 'black') +
+      # non-plateau values
+      geom_point(data = . %>% 
+                   dplyr::filter(plat == 'no'),
+                 size = 2, pch = plot_shape, colour = 'black') +
+      # plateau values
+      geom_point(data = . %>% 
+                   dplyr::filter(plat == 'yes'),
+                 size = 2, pch = plot_shape, colour = 'black', fill = 'black') +
+      # general plot aesthetics
+      scale_x_continuous(expand = c(0.02, 0.02),
+                         breaks = c(2, seq(10, 40, 10))) +
+      scale_fill_manual(values = c('#ff6666', '#0099cc', '#339966', '#bf40bf', '#e68a00')) +
+      annotate('segment', x = Inf, xend = Inf, y = -Inf, yend = Inf, linewidth = 1, colour = 'grey60') +
+      annotate('segment', x = -Inf, xend = Inf, y = Inf, yend = Inf, linewidth = 1, colour = 'grey60') +
+      annotate('segment', x = -Inf, xend = Inf, y = -Inf, yend = -Inf, linewidth = 1, colour = 'grey60') +
+      # add label to the top
+      geom_text(data = . %>% 
+                  group_by(Distance_time) %>% 
+                  dplyr::slice_max(upper) %>% 
+                  ungroup() %>% 
+                  mutate(n_samples = max_x),
+                aes(y = upper, label = Distance_time), 
+                hjust = 1, vjust = 1, size = 4) +
+      facet_wrap(~ Distance_time, ncol = 1, scales = 'free_y') +
+      labs(x = 'Number of samples',
+           y = y_lab,
+           title = plot_title) +
+      publication_theme(strip_colour = NA,
+                        strip_text_size = 0) +
+      theme(legend.position = 'none',
+            plot.title = element_text(hjust = -0.1, vjust = -1),
+            panel.spacing = unit(-0.1, 'cm'))
+    
+  }
+  
+  if (i == 1) {
+    fantom_plots <- island_precision_plots
+  } else {
+    orpheus_plots <- island_precision_plots
+  }
+  
+}
 
+precision_plot <- 
+  plot_spacer() +
+{fantom_plots[[1]] + fantom_plots[[2]] + fantom_plots[[3]] + plot_layout(ncol = 3)} +
+  {orpheus_plots[[1]] + orpheus_plots[[2]] + orpheus_plots[[3]] + plot_layout(ncol = 3)} +
+  plot_layout(ncol = 1, heights = c(0, 1, 1))
 
+precision_plot 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ggsave('../Figures/Precision_plot.png', precision_plot, height = 11, width = 12)
+  
+# Sometimes need to run just Fantome Island separately to get the correct right justification for
+# geom_text, which makes no sense...
+  
+  
