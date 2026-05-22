@@ -8,7 +8,7 @@ library(brms) # run models
 library(rstan) # optimize Stan
 library(DHARMa) # assess models
 library(vegan) # run multivariate analyses
-#library(ggvegan) # make vegan plots easier
+library(car) # test collinearity
 
 # optimize stan
 rstan_options(auto_write = TRUE)
@@ -230,6 +230,11 @@ ggplot(survey_clean %>%
   theme_light()
 
 # ANALYSES -------------------------------------------------------------------------------
+### Check collinearity ---------------------------------------------------------
+car::vif(lm(Abundance/Area ~ Distance_time + Location, data = survey_clean))
+car::vif(lm(Biomass/Area ~ Distance_time + Location, data = survey_clean))
+car::vif(lm(Richness/Area ~ Distance_time + Location, data = survey_clean))
+
 ### Abundance, biomass, and richness -------------------------------------------
 # Are there differences in the abundances estimated by the two methods?
 # Compare all methods for abundance
