@@ -520,7 +520,7 @@ for (i in 1:length(model_list)) {
       ungroup() %>% 
       # remove unnecessary columns
       dplyr::select(-.width, -.point, -.interval) %>% 
-      mutate(model = names(total_mod_list[[i]]$data)[1]) %>% 
+      mutate(model = names(model_list[[i]]$data)[1]) %>% 
       mutate_if(is.numeric, ~ round(., 2))
   
     print(df)
@@ -690,8 +690,7 @@ ss_plot <-
 
 ggsave('../Figures/SizeSpectra_plot.pdf', ss_plot, height = 7, width = 10)
 
-# Supplemental figures -----------------------------------------------------------------------------------
-### Precision ------------------------------------------------------------------
+# Precision ------------------------------------------------------------------
 # Measure the precision of different sampling techniques. Let's try extracting the standard deviation
 # between measures of abundance, biomass, and richness when scaled from 1 sample all the way up to multiple
 
@@ -829,11 +828,17 @@ for (i in 1:2) {
       mutate(plat = case_when(med_val >= lower_plat & med_val <= upper_plat ~ 'yes',
                               TRUE ~ 'no'),
              # reorder levels
-             Distance_time = factor(Distance_time, levels = c('Instant',
-                                                              '10min',
-                                                              '20m',
-                                                              '30m',
-                                                              '50m'))) %>% 
+             Distance_time = dplyr::recode(Distance_time,
+                                           'Instant' = 'Point count (instant)',
+                                           '10min' = 'Point count (10 min)',
+                                           '20m' = 'Transect (20 m)',
+                                           '30m' = 'Transect (30 m)',
+                                           '50m' = 'Transect (50 m)'),
+             Distance_time = factor(Distance_time, levels = c('Point count (instant)',
+                                                              'Point count (10 min)',
+                                                              'Transect (20 m)',
+                                                              'Transect (30 m)',
+                                                              'Transect (50 m)'))) %>% 
       # generate the plot
       ggplot(aes(x = n_samples, y = med_val, fill = Distance_time)) +
       # illustrate the plateau region
